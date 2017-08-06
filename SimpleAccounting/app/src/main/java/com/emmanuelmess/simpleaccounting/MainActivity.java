@@ -26,7 +26,6 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.ScrollView;
-import android.widget.TableLayout;
 import android.widget.TableRow;
 import android.widget.TextView;
 
@@ -35,6 +34,7 @@ import com.emmanuelmess.simpleaccounting.activities.GraphActivity;
 import com.emmanuelmess.simpleaccounting.activities.SettingsActivity;
 import com.emmanuelmess.simpleaccounting.activities.TempMonthActivity;
 import com.emmanuelmess.simpleaccounting.activities.dialogs.CurrencyPicker;
+import com.emmanuelmess.simpleaccounting.activities.views.LedgerView;
 import com.emmanuelmess.simpleaccounting.activities.views.SpinnerNoUnwantedOnClick;
 import com.emmanuelmess.simpleaccounting.dataloading.AsyncFinishedListener;
 import com.emmanuelmess.simpleaccounting.dataloading.LoadMonthAsyncTask;
@@ -68,7 +68,7 @@ import static com.emmanuelmess.simpleaccounting.utils.Utils.parseViewToString;
  * @author Emmanuel
  */
 public class MainActivity extends AppCompatActivity
-		implements AsyncFinishedListener<Pair<String[][], ArrayList<Integer>>> {
+		implements AsyncFinishedListener<Pair<String[][], ArrayList<Integer>>>, LedgerView.LedgeCallbacks{
 
 	public static final String UPDATE_YEAR_SETTING = "update 1.2 year";
 	public static final String UPDATE_MONTH_SETTING = "update 1.2 month";
@@ -83,12 +83,10 @@ public class MainActivity extends AppCompatActivity
 	public static final int[] EDIT_IDS = {R.id.editDate, R.id.editRef, R.id.editCredit, R.id.editDebit, R.id.textBalance};
 	public static final int[] TEXT_IDS = {R.id.textDate, R.id.textRef, R.id.textCredit, R.id.textDebit};
 
-	private static boolean invertCreditDebit = false;
-
 	private int FIRST_REAL_ROW = 1;//excluding header and previous balance. HAS 2 STATES: 1 & 2
 	private int DEFAULT_CURRENCY = 0;
 
-	private TableLayout table = null;
+	private LedgerView table = null;
 	private View space;
 	private FloatingActionButton fab;
 	private TableGeneral tableGeneral;
@@ -99,9 +97,6 @@ public class MainActivity extends AppCompatActivity
 	private LoadPrevBalanceAsyncTask loadPrevBalance = null;
 
 	private int updateYear, updateMonth;
-
-	//pointer to row being edited STARTS IN 1
-	private int editableRow = -1;
 
 	private boolean editedColumn[] = new boolean[4];
 
@@ -148,8 +143,8 @@ public class MainActivity extends AppCompatActivity
 	}
 
 	public static void invalidateTableHeader(boolean invertCreditDebit) {
-		if (MainActivity.invertCreditDebit != invertCreditDebit)
-			MainActivity.invertCreditDebit = invertCreditDebit;
+		//if (MainActivity.invertCreditDebit != invertCreditDebit)
+		//	MainActivity.invertCreditDebit = invertCreditDebit;
 	}
 
 	@Override
@@ -161,7 +156,8 @@ public class MainActivity extends AppCompatActivity
 
 		inflater = (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
 		scrollView = (ScrollView) findViewById(R.id.scrollView);
-		table = (TableLayout) findViewById(R.id.table);
+		table = (LedgerView) findViewById(R.id.table);
+		table.setListener(this);
 		tableGeneral = new TableGeneral(this);//DO NOT change the order of table creation!
 		tableMonthlyBalance = new TableMonthlyBalance(this);
 
@@ -211,12 +207,12 @@ public class MainActivity extends AppCompatActivity
 		}
 
 		fab.setOnClickListener(view->{
-			inflateNewRow();
+			table.inflateEmptyRow();
 			scrollView.fullScroll(View.FOCUS_DOWN);
 
-			currentEditableToView();
+			table.editableRowToView();
 			if (table.getChildCount() > FIRST_REAL_ROW) {
-				updateEditableRow(table.getChildCount() - 1);
+				table.rowViewToEditable(table.getChildCount() - 1);
 
 				tableGeneral.newRowInMonth(editableMonth, editableYear, editableCurrency);
 				rowToDBRowConversion.add(tableGeneral.getLastIndex());
@@ -236,21 +232,7 @@ public class MainActivity extends AppCompatActivity
 	@Override
 	protected void onResume() {
 		super.onResume();
-		if (invertCreditDebit !=
-				getDefaultSharedPreferences(this).getBoolean(INVERT_CREDIT_DEBIT_SETTING, false)) {
-
-			int tempId = 0;
-
-			table.findViewById(R.id.credit).setId(tempId);
-			table.findViewById(R.id.debit).setId(R.id.credit);
-			table.findViewById(tempId).setId(R.id.debit);
-
-			((TextView) findViewById(R.id.credit)).setText(R.string.credit);
-			((TextView) findViewById(R.id.debit)).setText(R.string.debit);
-
-			invertCreditDebit =
-					getDefaultSharedPreferences(this).getBoolean(INVERT_CREDIT_DEBIT_SETTING, false);
-		}
+		table.setInvertCreditAndDebit(getDefaultSharedPreferences(this).getBoolean(INVERT_CREDIT_DEBIT_SETTING, false));
 		if (invalidateTable && (loadingMonthTask == null || loadingMonthTask.getStatus() != AsyncTask.Status.RUNNING)) {
 			loadMonth(editableMonth, editableYear, editableCurrency);
 
@@ -267,10 +249,8 @@ public class MainActivity extends AppCompatActivity
 
 	@Override
 	public void onBackPressed() {
-		if (editableRow != -1)
-			currentEditableToView();
-		else
-			super.onBackPressed();
+		if (table.isEditingRow()) table.editableRowToView();
+		else super.onBackPressed();
 	}
 
 	@Override
@@ -294,8 +274,8 @@ public class MainActivity extends AppCompatActivity
 			spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
 				@Override
 				public void onItemSelected(AdapterView<?> parent, View view, int pos, long id) {
-					if(editableRow != -1)
-						currentEditableToView();
+					if(table.isEditingRow())
+						table.editableRowToView();
 
 					if (pos == DEFAULT_CURRENCY)
 						editableCurrency = "";
@@ -387,7 +367,7 @@ public class MainActivity extends AppCompatActivity
 
 	public View loadRow() {
 		int rowViewIndex = table.getChildCount() - 1;
-		TableRow row = (TableRow) table.getChildAt(rowViewIndex);
+		TableRow row = table.getLastRow();
 
 		setListener(rowViewIndex);
 		checkEditInBalance(rowViewIndex, row);
@@ -400,10 +380,6 @@ public class MainActivity extends AppCompatActivity
 		return FIRST_REAL_ROW;
 	}
 
-	public void setFirstRealRow(int firstRealRow) {
-		this.FIRST_REAL_ROW = firstRealRow;
-	}
-
 	private void checkEditInBalance(final int index, TableRow row) {
 		final EditText debit = (EditText) row.findViewById(R.id.editDebit),
 				credit = (EditText) row.findViewById(R.id.editCredit);
@@ -414,7 +390,7 @@ public class MainActivity extends AppCompatActivity
 		TextWatcher watcher = new Utils.SimpleTextWatcher() {
 			@Override
 			public void afterTextChanged(Editable editable) {
-				if (editableRow == index) {
+				if (table.getEditableRow() == index) {
 					if (equal(credit.getText().toString(), "."))
 						credit.setText("0");
 
@@ -484,7 +460,7 @@ public class MainActivity extends AppCompatActivity
 
 			@Override
 			public void afterTextChanged(Editable editable) {
-				if (editableRow == index && !equal(mem, ""))
+				if (table.getEditableRow() == index && !equal(mem, ""))
 					reloadMonthOnChangeToView = !equal(mem, editable.toString());
 			}
 		};
@@ -507,68 +483,11 @@ public class MainActivity extends AppCompatActivity
 	}
 
 	private void setListener(final int rowIndex) {
-		final View row = table.getChildAt(rowIndex);
-
-		row.setOnLongClickListener(v->{
-			currentEditableToView();
-
-			for (int i = 0; i < TEXT_IDS.length; i++) {
-				TextView t1 = (TextView) row.findViewById(TEXT_IDS[i]);
-				EditText t = (EditText) row.findViewById(EDIT_IDS[i]);
-
-				t.setText(t1.getText());
-				t1.setText("");
-
-				t1.setVisibility(GONE);
-				t.setVisibility(VISIBLE);
-			}
-			updateEditableRow(rowIndex);
+		table.getChildAt(rowIndex).setOnLongClickListener(v->{
+			table.editableRowToView();
+			table.rowViewToEditable(rowIndex);
 			return true;
 		});
-	}
-
-	private void currentEditableToView() {
-		View row = table.getChildAt(editableRow);
-		if (row != null && editableRow >= 0) {
-			for (int i = 0; i < EDIT_IDS.length - 1; i++) {
-				if (editedColumn[i]) {
-					String t = ((EditText) row.findViewById(EDIT_IDS[i])).getText().toString();
-					tableGeneral.update(rowToDBRowConversion.get(editableRow - FIRST_REAL_ROW),
-							TableGeneral.COLUMNS[i], (!equal(t, "")? t:null));
-				}
-			}
-
-			TextView balanceText = ((TextView) row.findViewById(R.id.textBalance));
-
-			if (balanceText != null && balanceText.getText() == "") {
-				View previousRow = editableRow - 1 == 0? null:table.getChildAt(editableRow - 1);
-				TextView lastBalance;
-				if (previousRow != null && (lastBalance = (TextView) previousRow.findViewById(R.id.textBalance)) != null)
-					balanceText.setText(lastBalance.getText());
-				else
-					balanceText.setText("$ 0.0");
-			}
-
-			updateEditableRow(-1);
-
-			for (int i = 0; i < TEXT_IDS.length; i++) {
-				EditText t = (EditText) row.findViewById(EDIT_IDS[i]);
-				TextView t1 = (TextView) row.findViewById(TEXT_IDS[i]);
-
-				t.setOnTouchListener(null);
-
-				t1.setText(t.getText());
-				t.setText("");
-
-				t.setVisibility(GONE);
-				t1.setVisibility(VISIBLE);
-			}
-
-			if (reloadMonthOnChangeToView) {
-				reloadMonthOnChangeToView = false;
-				loadMonth(editableMonth, editableYear, editableCurrency);
-			}
-		}
 	}
 
 	private void loadMonth(int month, int year, String currency) {
@@ -597,10 +516,7 @@ public class MainActivity extends AppCompatActivity
 				loadPrevBalance = new LoadPrevBalanceAsyncTask(month, year, editableCurrency, tableMonthlyBalance,
 						(lastMonthData) -> {
 							if (lastMonthData != null) {
-								inflater.inflate(R.layout.row_main, table);
-
-								int rowViewIndex = table.getChildCount() - 1;
-								TableRow row = (TableRow) table.getChildAt(rowViewIndex);
+								TableRow row = (TableRow) table.inflateEmptyRow();
 
 								for (int j = 0; j < TEXT_IDS.length; j++) {
 									row.findViewById(EDIT_IDS[j]).setVisibility(View.GONE);
@@ -614,7 +530,7 @@ public class MainActivity extends AppCompatActivity
 								TextView t = (TextView) row.findViewById(R.id.textBalance);
 								String s = "$ " + String.valueOf(lastMonthData);
 								t.setText(s);
-								setFirstRealRow(2);
+								FIRST_REAL_ROW = 2;
 							}
 							loadingMonthTask.execute();
 						});
@@ -641,13 +557,12 @@ public class MainActivity extends AppCompatActivity
 		BigDecimal memBalance = BigDecimal.ZERO;
 
 		if (getFirstRealRow() == 2) {
-			memBalance = memBalance.add(Utils.parseString(
-					((TextView) table.getChildAt(1).findViewById(R.id.textBalance))
-							.getText().toString().substring(2)));
+			TextView textBalance = (TextView) table.getChildAt(1).findViewById(R.id.textBalance);
+			memBalance = memBalance.add(Utils.parseString(textBalance.getText().toString().substring(2)));
 		}
 
 		for (String[] dbRow : dbRowsPairedRowToDBConversion.first) {
-			inflateNewRow();
+			table.inflateEmptyRow();
 
 			View row = loadRow();
 
@@ -682,12 +597,11 @@ public class MainActivity extends AppCompatActivity
 		loadShowcaseView(inflater, scrollView);
 
 		if (createNewRowWhenMonthLoaded && table != null) {
-			inflateNewRow();
+			table.inflateEmptyRow();
 
 			scrollView.fullScroll(View.FOCUS_DOWN);
 
-			currentEditableToView();
-			editableRow = table.getChildCount() - 1;
+			table.editableRowToView();
 
 			tableGeneral.newRowInMonth(editableMonth, editableYear, editableCurrency);
 			this.rowToDBRowConversion.add(tableGeneral.getLastIndex());
@@ -706,7 +620,7 @@ public class MainActivity extends AppCompatActivity
 
 	private void addToMonthsDB() {
 		if (table.getChildCount() - 1 >= FIRST_REAL_ROW) {
-			View row = table.getChildAt(table.getChildCount() - 1);
+			View row = table.getLastRow();
 
 			TextWatcher watcher = new Utils.SimpleTextWatcher() {
 				@Override
@@ -731,11 +645,11 @@ public class MainActivity extends AppCompatActivity
 			final int rowToEdit = FIRST_REAL_ROW;
 
 			if (table.getChildAt(rowToEdit) == null) {
-				inflateNewRow();
+				table.inflateEmptyRow();
 
 				scrollView.fullScroll(View.FOCUS_DOWN);
 
-				updateEditableRow(rowToEdit);
+				table.rowViewToEditable(rowToEdit);
 				View row = table.getChildAt(rowToEdit);
 
 				EditText date = (EditText) row.findViewById(R.id.editDate);
@@ -749,7 +663,7 @@ public class MainActivity extends AppCompatActivity
 				TextView balance = (TextView) row.findViewById(R.id.textBalance);
 				balance.setText("$ -100.0");
 
-				currentEditableToView();
+				table.editableRowToView();
 
 				destroyFirst = true;
 			}
@@ -769,8 +683,7 @@ public class MainActivity extends AppCompatActivity
 						@Override
 						public void onShowcaseViewHide(ShowcaseView showcaseView) {
 							if (destroyFirst) {
-								table.removeView(table.getChildAt(rowToEdit));
-								editableRow = -1;
+								table.clear();
 							}
 						}
 					})
@@ -780,34 +693,6 @@ public class MainActivity extends AppCompatActivity
 			pref_editor.putBoolean(PREFS_FIRST_RUN, false);
 			pref_editor.apply();
 		}
-	}
-
-	private void inflateNewRow() {
-		inflater.inflate(R.layout.row_main, table);
-
-		if (invertCreditDebit) {
-			View r = table.getChildAt(table.getChildCount() - 1);
-
-			r.findViewById(R.id.textCredit).setId(0);
-			r.findViewById(R.id.textDebit).setId(R.id.textCredit);
-			r.findViewById(0).setId(R.id.textDebit);
-
-			r.findViewById(R.id.editCredit).setId(0);
-			r.findViewById(R.id.editDebit).setId(R.id.editCredit);
-			r.findViewById(0).setId(R.id.editDebit);
-
-			((EditText) r.findViewById(R.id.editCredit)).setHint(R.string.credit);
-			((EditText) r.findViewById(R.id.editDebit)).setHint(R.string.debit);
-		}
-	}
-
-	private void updateEditableRow(int value) {
-		if (value == -1 || table == null)
-			ACRAHelper.reset();
-		else
-			ACRAHelper.writeData(table, editableYear, editableMonth);
-
-		editableRow = value;
 	}
 
 	/**
@@ -820,4 +705,30 @@ public class MainActivity extends AppCompatActivity
 				|| editableYear == TableGeneral.OLDER_THAN_UPDATE;
 	}
 
+	@Override
+	public void onUpdateEditableRow(int index) {
+		if (index == -1 || table == null)
+			ACRAHelper.reset();
+		else
+			ACRAHelper.writeData(table, editableYear, editableMonth);
+	}
+
+	@Override
+	public void onBeforeMakeRowNotEditable(View row) {
+		for (int i = 0; i < EDIT_IDS.length - 1; i++) {
+			if (editedColumn[i]) {
+				String t = ((EditText) row.findViewById(EDIT_IDS[i])).getText().toString();
+				tableGeneral.update(rowToDBRowConversion.get(table.getEditableRow() - FIRST_REAL_ROW),
+						TableGeneral.COLUMNS[i], (!equal(t, "")? t:null));
+			}
+		}
+	}
+
+	@Override
+	public void onAfterMakeRowNotEditable(View row) {
+		if (reloadMonthOnChangeToView) {
+			reloadMonthOnChangeToView = false;
+			loadMonth(editableMonth, editableYear, editableCurrency);
+		}
+	}
 }
