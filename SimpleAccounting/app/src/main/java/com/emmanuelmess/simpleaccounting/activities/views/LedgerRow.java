@@ -46,36 +46,54 @@ public class LedgerRow extends TableRow {
 	}
 
 	public void setDate(String date) {
-		dateText.setText(date);
+		setText(dateText, dateEditText, date);
 	}
 
 	public void setReference(@StringRes int ref) {
-		referenceText.setText(ref);
+		setText(referenceText, referenceEditText, ref);
 	}
 
 	public void setReference(String ref) {
-		referenceText.setText(ref);
+		setText(referenceText, referenceEditText, ref);
 	}
 
 	public void setCredit(String credit) {
-		creditText.setText(credit);
+		setText(creditText, creditEditText, credit);
+	}
+
+	public CharSequence getCreditText() {
+		return creditText.getText();
 	}
 
 	public void setDebit(String debit) {
-		debitText.setText(debit);
+		setText(debitText, debitEditText, debit);
 	}
 
+	public CharSequence getDebitText() {
+		return debitText.getText();
+	}
 
 	public void setCredit(BigDecimal credit) {
+		if(creditText.getVisibility() != VISIBLE) {
+			throw new IllegalStateException("setCredit(BigDecimal) CANNOT be used while the row is editable!");
+		}
 		creditText.setText(credit.toPlainString());
 	}
 
 	public void setDebit(BigDecimal debit) {
+		if(creditText.getVisibility() != VISIBLE) {
+			throw new IllegalStateException("setDebit(BigDecimal) CANNOT be used while the row is editable!");
+		}
+
 		debitText.setText(debit.toPlainString());
 	}
 
 	public void setBalance(BigDecimal balance) {
 		balanceText.setText(formatter.format(balance));
+	}
+
+	public CharSequence getBalanceText() {
+		return balanceText.getText();
 	}
 
 	public void invertDebitCredit() {
@@ -108,6 +126,22 @@ public class LedgerRow extends TableRow {
 
 			t.setVisibility(GONE);
 			t1.setVisibility(VISIBLE);
+		}
+	}
+
+	private void setText(TextView a, TextView b, CharSequence s) {
+		if(a.getVisibility() != VISIBLE) {
+			b.setText(s);
+		} else {
+			a.setText(s);
+		}
+	}
+
+	private void setText(TextView a, TextView b, @StringRes int s) {
+		if(a.getVisibility() != VISIBLE) {
+			b.setText(s);
+		} else {
+			a.setText(s);
 		}
 	}
 

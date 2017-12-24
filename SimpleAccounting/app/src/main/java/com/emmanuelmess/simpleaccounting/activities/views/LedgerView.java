@@ -131,7 +131,7 @@ public class LedgerView extends TableLayout {
 	}
 
 	public void clear() {
-		for(int i = 1; i < getChildCount(); i++) {//DO NOT remove first line, the column titles
+		for(int i = getChildCount()-1; i > 0; i--) {//DO NOT remove first line, the column titles
 			removeViewAt(i);
 		}
 
