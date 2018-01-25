@@ -12,6 +12,8 @@ import android.view.MenuItem;
 import com.emmanuelmess.simpleaccounting.MainActivity;
 import com.emmanuelmess.simpleaccounting.R;
 import com.emmanuelmess.simpleaccounting.utils.Utils;
+import com.mikepenz.aboutlibraries.Libs;
+import com.mikepenz.aboutlibraries.LibsBuilder;
 
 /**
  * A {@link PreferenceActivity} that presents a set of application settings. On
@@ -28,6 +30,7 @@ public class SettingsActivity extends AppCompatPreferenceActivity implements Pre
 
 	public static final String INVERT_CREDIT_DEBIT_SETTING = "pref_invertcreditdebit";
 	public static final String CURRENCY_PICKER_SETTING = "pref_currencypicker";
+	public static final String LIBRARIES_SETTING = "pref_libs";
 
 	/**
 	 * Binds a preference's summary to its value. More specifically, when the
@@ -114,6 +117,14 @@ public class SettingsActivity extends AppCompatPreferenceActivity implements Pre
 		// their summaries are updated to reflect the new value, per the Android Design guidelines.
 		bindPreferenceSummaryToValue(findPreference(INVERT_CREDIT_DEBIT_SETTING));
 		bindPreferenceSummaryToValue(findPreference(CURRENCY_PICKER_SETTING));
+		findPreference(LIBRARIES_SETTING).setOnPreferenceClickListener((preference) -> {
+			new LibsBuilder()
+					.withActivityStyle(Libs.ActivityStyle.LIGHT)
+					.withAboutIconShown(true)
+					.withAboutVersionShownName(true)
+					.start(this);
+			return true;
+		});
 	}
 
 	/**
